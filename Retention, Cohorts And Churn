@@ -1,0 +1,26 @@
+<h1>SQL code for Retention, Cohorts & Churn </h1>
+
+WITH table2 AS									
+(SELECT user_pseudo_id,									
+DATE_TRUNC(MIN(subscription_start), week) AS subscription_start,
+ /* Used to get around people who have multiple subscriptions, counts a person as churned when all of their subscriptions have ended */
+DATE_TRUNC((CASE WHEN MAX(CASE WHEN subscription_end IS NULL THEN 1 ELSE 0 END) = 0 THEN MAX(subscription_end)END), week) AS subscription_end									
+FROM `tc-da-1.turing_data_analytics.subscriptions`									
+GROUP BY user_pseudo_id									
+)									
+/* Used for creating the cohorts */									
+SELECT subscription_start AS week,									
+COUNT(user_pseudo_id) AS total_users,									
+COUNT(CASE WHEN subscription_end > subscription_start OR subscription_end IS NULL THEN user_pseudo_id END) AS week0,									
+COUNT(CASE WHEN subscription_end > (subscription_start + INTERVAL 1 week) OR subscription_end IS NULL THEN user_pseudo_id END) AS week1,									
+COUNT(CASE WHEN subscription_end > (subscription_start + INTERVAL 2 week) OR subscription_end IS NULL THEN user_pseudo_id END) AS week2,									
+COUNT(CASE WHEN subscription_end > (subscription_start + INTERVAL 3 week) OR subscription_end IS NULL THEN user_pseudo_id END) AS week3,									
+COUNT(CASE WHEN subscription_end > (subscription_start + INTERVAL 4 week) OR subscription_end IS NULL THEN user_pseudo_id END) AS week4,									
+COUNT(CASE WHEN subscription_end > (subscription_start + INTERVAL 5 week) OR subscription_end IS NULL THEN user_pseudo_id END) AS week5,									
+COUNT(CASE WHEN subscription_end > (subscription_start + INTERVAL 6 week) OR subscription_end IS NULL THEN user_pseudo_id END) AS week6									
+FROM table2									
+GROUP BY table2.subscription_start									
+
+<h2><b>THE LINK</b></h2>
+
+https://docs.google.com/spreadsheets/d/1caxLyrU16-apD-NHyh761n8CRNZNLIRkf0BDdgD4eRY/edit#gid=564297407
