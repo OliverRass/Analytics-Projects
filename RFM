@@ -1,0 +1,118 @@
+Visualisation:
+
+https://datastudio.google.com/reporting/5bd6d0fd-29e6-4587-abfe-bee385f54e7e
+
+CODE:
+/* Making a coherse table with monetary, frequency and recency information */
+WITH monetary AS (SELECT CustomerID, SUM((UnitPrice*Quantity)) AS monetary
+FROM `tc-da-1.turing_data_analytics.rfm`
+WHERE (InvoiceDate BETWEEN '2010-12-01' AND '2011-12-01') AND CustomerID IS NOT NULL
+GROUP BY CustomerID),
+frequency AS (SELECT CustomerID, COUNT(DISTINCT InvoiceNo) AS frequency
+FROM `tc-da-1.turing_data_analytics.rfm`
+WHERE (InvoiceDate BETWEEN '2010-12-01' AND '2011-12-01') AND CustomerID IS NOT NULL AND Quantity > 0
+GROUP BY CustomerID),
+recency AS (SELECT CustomerID, DATE_DIFF(DATE'2011-12-01',DATE(MAX(InvoiceDate)), DAY) AS recency
+FROM `tc-da-1.turing_data_analytics.rfm`
+WHERE (InvoiceDate BETWEEN '2010-12-01' AND '2011-12-01') AND CustomerID IS NOT NULL AND Quantity > 0
+GROUP BY CustomerID), 
+t2 AS (SELECT m.CustomerID, f.frequency, m.monetary, r.recency
+FROM monetary m
+JOIN frequency f
+ON m.CustomerID = f.CustomerID
+JOIN recency r
+ON r.CustomerID = m.CustomerID
+),
+t3 AS (
+/* Assigns each monetary, recency and frequency value a precentile from 25 to 100 with intervals of 25 */
+  SELECT 
+    a.*,
+    --All percentiles for MONETARY
+    b.percentiles[offset(25)] AS m25, 
+    b.percentiles[offset(50)] AS m50,
+    b.percentiles[offset(75)] AS m75, 
+    b.percentiles[offset(100)] AS m100,    
+    --All percentiles for FREQUENCY
+    c.percentiles[offset(25)] AS f25, 
+    c.percentiles[offset(50)] AS f50,
+    c.percentiles[offset(75)] AS f75, 
+    c.percentiles[offset(100)] AS f100,    
+    --All percentiles for RECENCY
+    d.percentiles[offset(25)] AS r25, 
+    d.percentiles[offset(50)] AS r50,
+    d.percentiles[offset(75)] AS r75, 
+    d.percentiles[offset(100)] AS r100
+FROM 
+    t2 a,
+    (SELECT APPROX_QUANTILES(monetary, 100) percentiles FROM
+    t2) b,
+    (SELECT APPROX_QUANTILES(frequency, 100) percentiles FROM
+    t2) c,
+    (SELECT APPROX_QUANTILES(recency, 100) percentiles FROM
+    t2) d
+),
+t4 AS (
+    SELECT *, 
+    CAST(ROUND((f_score + m_score) / 2, 0) AS INT64) AS fm_score
+    FROM (
+      /* Assigns a score for monetary, frequency and recency based on their procentile */
+        SELECT *, 
+        CASE WHEN monetary <= m25 THEN 1
+            WHEN monetary <= m50 AND monetary > m25 THEN 2 
+            WHEN monetary <= m75 AND monetary > m50 THEN 3 
+            WHEN monetary <= m100 AND monetary > m75 THEN 4 
+        END AS m_score,
+        CASE WHEN frequency <= f25 THEN 1
+            WHEN frequency <= f50 AND frequency > f25 THEN 2 
+            WHEN frequency <= f75 AND frequency > f50 THEN 3 
+            WHEN frequency <= f100 AND frequency > f75 THEN 4 
+        END AS f_score,
+        --Recency scoring is reversed
+        CASE WHEN recency <= r25 THEN 4
+            WHEN recency <= r50 AND recency > r25 THEN 3 
+            WHEN recency <= r75 AND recency > r50 THEN 2 
+            WHEN recency <= r100 AND recency > r75 THEN 1 
+        END AS r_score,
+        FROM t3
+        )
+)
+
+SELECT 
+        CustomerID, 
+        recency,
+        frequency, 
+        monetary,
+        r_score,
+        f_score,
+        m_score,
+        fm_score,
+/* Assings each customer into a group based on their RFM score */
+        CASE WHEN  (r_score = 4 AND fm_score = 4)
+            OR (r_score = 4 AND fm_score = 3)  
+        THEN 'Champions'
+        WHEN (r_score = 3 AND fm_score = 4) 
+            OR (r_score = 4 AND fm_score = 2)    
+        THEN 'Loyal Customers'
+        WHEN (r_score = 3 AND fm_score = 3)
+            OR (r_score = 3 AND fm_score = 2)
+        THEN 'Potential Loyalists'
+        WHEN r_score = 4 AND fm_score = 1 
+        THEN 'Recent Customers'
+        WHEN (r_score = 3 AND fm_score = 1)
+        THEN 'Promising'
+        WHEN (r_score = 2 AND fm_score = 3)
+            OR (r_score = 2 AND fm_score = 2)
+        THEN 'Customers Needing Attention'
+        WHEN r_score = 2 AND fm_score = 1 
+        THEN 'About to Sleep'
+        WHEN (r_score = 2 AND fm_score = 4) 
+            OR (r_score = 1 AND fm_score = 3)
+        THEN 'At Risk'
+        WHEN (r_score = 1 AND fm_score = 4)        
+        THEN 'Cant Lose Them'
+        WHEN r_score = 1 AND fm_score = 2 
+        THEN 'Hibernating'
+        WHEN r_score = 1 AND fm_score = 1 
+        THEN 'Lost'
+        END AS rfm_segment 
+    FROM t4
