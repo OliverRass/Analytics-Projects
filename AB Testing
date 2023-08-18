@@ -27,6 +27,6 @@ FROM table1
 LEFT JOIN table2									
 ON table1.Campaign = table2.campaign									
 									
-SHEETS:
+Analysis:
 
 https://docs.google.com/spreadsheets/d/1BfLSXbCYJ4G6x5C5ebyREV5Od-71eIs6jKGvJlCwdLw/edit#gid=1210602233
